@@ -1,7 +1,10 @@
 // wpp.js
+import pkg from "@wppconnect-team/wppconnect";
+const { create, Client } = pkg;
 import fs from "fs";
 import path from "path";
-import { create, Client } from "@wppconnect-team/wppconnect";
+import { fileURLToPath } from "url";
+
 
 let client = null;
 const qrPath = path.join(process.cwd(), "public/qrcode.png");
