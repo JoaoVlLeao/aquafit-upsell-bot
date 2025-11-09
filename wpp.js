@@ -8,10 +8,13 @@ const tokenPath = path.join(process.cwd(), "tokens", sessionName);
 
 if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 
+// 🔁 Cliente global (para reutilizar sessão)
+let clientInstance = null;
+
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
 
-  // 🔒 Remove travas de sessão antigas (evita "browser already running")
+  // 🔒 Remove travas antigas
   const sessionLock = path.join(tokenPath, "SingletonLock");
   if (fs.existsSync(sessionLock)) {
     console.warn("⚠️ Removendo trava de sessão antiga (SingletonLock)");
@@ -25,7 +28,13 @@ export async function iniciarWPP(headless = true) {
   const dir = path.join(process.cwd(), "public");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  return create({
+  // Se já houver uma sessão ativa, reaproveita
+  if (clientInstance) {
+    console.log("✅ Sessão WhatsApp já ativa. Reutilizando instância existente.");
+    return clientInstance;
+  }
+
+  clientInstance = await create({
     session: sessionName,
     headless,
     deviceName: "AquaFit Upsell Bot 💚💗",
@@ -53,7 +62,10 @@ export async function iniciarWPP(headless = true) {
       const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
       fs.writeFileSync(qrImagePath, imageBuffer);
 
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
+      // ✅ Gera link curto compatível com navegador
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+        urlCode
+      )}`;
 
       console.log("\n✅ QR Code atualizado!");
       console.log("🔗 Escaneie o QR direto no navegador:");
@@ -73,7 +85,6 @@ export async function iniciarWPP(headless = true) {
           if (!msg.body || msg.body === "undefined") return;
           console.log(`💬 Cliente respondeu (${msg.from}): "${msg.body}"`);
 
-          // Responde diretamente ao cliente, sem encaminhar nada
           await client.sendText(
             msg.from,
             "Oi 💚💗! Aqui é a equipe *AquaFit Brasil*. Essa é uma conta automática, mas queremos te ajudar! 💬\n\n" +
@@ -89,7 +100,12 @@ export async function iniciarWPP(headless = true) {
 
       return client;
     })
-    .catch((err) => console.error("❌ Erro ao iniciar WhatsApp:", err));
+    .catch((err) => {
+      console.error("❌ Erro ao iniciar WhatsApp:", err);
+      clientInstance = null; // se der erro, limpa instância
+    });
+
+  return clientInstance;
 }
 
 export async function enviarMensagem(numero, mensagem) {
@@ -99,9 +115,11 @@ export async function enviarMensagem(numero, mensagem) {
     const formatted = numero.startsWith("55") ? `${numero}@c.us` : `55${numero}@c.us`;
     console.log(`📤 Enviando mensagem para ${formatted}`);
 
+    // ✅ Reutiliza a instância já iniciada (sem recriar browser)
     const client = await iniciarWPP(true);
-    await client.sendText(formatted, mensagem);
+    if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
+    await client.sendText(formatted, mensagem);
     console.log(`📤 Mensagem enviada com sucesso para ${formatted}`);
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
