@@ -1,3 +1,4 @@
+// wpp.js
 import pkg from "@wppconnect-team/wppconnect";
 import fs from "fs";
 import path from "path";
@@ -107,33 +108,31 @@ export async function iniciarWPP(headless = true) {
   return clientInstance;
 }
 
-/** 🚀 Envia mensagem com imagem (único envio, sem link visível) */
 export async function enviarMensagem(numero, mensagem, imagemUrl) {
   try {
-    if (!numero || !mensagem) return console.warn("⚠️ Número ou mensagem ausente ao enviar.");
+    if (!numero || !mensagem) {
+      console.warn("⚠️ Número ou mensagem ausente ao enviar.");
+      return;
+    }
     const formatted = formatarNumero(numero);
     if (!formatted) throw new Error(`Número inválido: ${numero}`);
 
     console.log(`📤 Enviando mensagem para ${formatted}`);
 
+    // remove qualquer link de imagem que esteja no texto
+    mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
+
     const client = await iniciarWPP(true);
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
     if (imagemUrl) {
-      // 🔽 Correção: baixar imagem temporariamente e enviar como arquivo
-      const tempPath = path.join(process.cwd(), "public", "temp-image.jpg");
-      const response = await fetch(imagemUrl);
-      const buffer = await response.arrayBuffer();
-      fs.writeFileSync(tempPath, Buffer.from(buffer));
-
-      await client.sendImage(formatted, tempPath, "promocao.jpg", mensagem);
+      await client.sendImage(formatted, imagemUrl, "promo.jpg", mensagem);
       console.log(`✅ Imagem + legenda enviadas para ${formatted}`);
-
-      fs.unlinkSync(tempPath); // limpa o arquivo temporário
     } else {
       await client.sendText(formatted, mensagem);
       console.log(`✅ Mensagem enviada para ${formatted}`);
     }
+
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }
