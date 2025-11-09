@@ -184,12 +184,21 @@ export async function enviarMensagem(numeroBruto, mensagem) {
     const jid = await resolveJid(numeroBruto);
     console.log(`📤 Enviando mensagem para ${jid}`);
 
-    const imagemUrl =
-      "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
+    const imagePath = path.join(process.cwd(), "public", "oferta.png");
 
-    mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
+// se não existir, baixa 1x do S3
+if (!fs.existsSync(imagePath)) {
+  const imageUrl =
+    "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
+  const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+  fs.writeFileSync(imagePath, response.data);
+  console.log("🖼️ Imagem baixada e salva localmente para uso offline.");
+}
 
-    await clientInstance.sendImage(jid, imagemUrl, "oferta.png", mensagem);
+// envia imagem local (ultra rápido e estável)
+await clientInstance.sendFile(jid, imagePath, "oferta.png", mensagem);
+console.log(`✅ Mensagem + imagem enviadas com sucesso para ${jid}`);
+
     console.log(`✅ Mensagem + imagem enviadas com sucesso para ${jid}`);
 
     try {
