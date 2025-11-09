@@ -122,7 +122,13 @@ app.post("/webhook/yampi", async (req, res) => {
     }
 
     // Sanitiza número
-    const numero = phone.replace(/\D/g, "").replace(/^55/, "");
+    // Sanitiza número (sem remover o DDI!)
+const numero = phone.replace(/\D/g, "");
+
+// Logs para depuração
+console.log("📞 Número recebido no webhook (bruto):", phone);
+console.log("🔧 Número sanitizado (mantendo DDI se existir):", numero);
+
     const nome = payload?.customer?.data?.first_name || "cliente";
     const numeroPedido = payload?.resource?.id || "000000";
     const imagem = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";

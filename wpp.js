@@ -11,6 +11,7 @@ if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 let clientInstance = null;
 
 function formatarNumero(numero) {
+console.log("🔢 Número original recebido em formatarNumero:", numero);
   if (!numero) return null;
   let num = numero.toString().replace(/\D/g, "");
   if (!num.startsWith("55")) num = "55" + num;
