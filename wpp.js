@@ -1,48 +1,66 @@
 // wpp.js
 import pkg from "@wppconnect-team/wppconnect";
 const { create, Client } = pkg;
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 
+export let client = null;
 
-let client = null;
-const qrPath = path.join(process.cwd(), "public/qrcode.png");
-
+/**
+ * Inicializa a sessão do WhatsApp Web
+ */
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
+
   client = await create({
     session: "recuperacao-upsell",
     headless,
+    useChrome: true,
+    autoClose: false,
+    restartOnCrash: true,
     catchQR: (base64Qr) => {
-      const base64Data = base64Qr.replace(/^data:image\/png;base64,/, "");
-      fs.writeFileSync(qrPath, base64Data, "base64");
-      console.log("📲 QR Code atualizado em /public/qrcode.png");
+      import("fs").then(fs => {
+        import("path").then(path => {
+          const filePath = path.resolve("public/qrcode.png");
+          fs.writeFileSync(filePath, Buffer.from(base64Qr.split(",")[1], "base64"));
+          console.log("📸 QR Code atualizado!");
+        });
+      });
     },
-    statusFind: (statusSession, session) => {
-      console.log(`📡 Sessão ${session} status: ${statusSession}`);
-    },
-    onLoadingScreen: (percent, message) => {
-      console.log("⌛", percent, message);
+    puppeteerOptions: {
+      headless,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-accelerated-2d-canvas",
+        "--no-first-run",
+        "--no-zygote",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--single-process"
+      ],
     },
   });
 
-  client.onMessage(async (message) => {
-    console.log("💬 Mensagem recebida:", message.body);
-  });
-
-  console.log("✅ WhatsApp conectado (Upsell bot).");
+  console.log("✅ Sessão WhatsApp (Upsell) iniciada com sucesso!");
   return client;
 }
 
-/** Envia mensagem de texto simples */
-export async function enviarMensagem(numero, mensagem) {
-  try {
-    if (!client) throw new Error("Cliente WhatsApp não inicializado.");
-    const jid = `${numero}@c.us`;
-    await client.sendText(jid, mensagem);
-    console.log(`📤 Mensagem enviada com sucesso para ${numero}`);
-  } catch (err) {
-    console.error("❌ Erro ao enviar mensagem:", err);
+/**
+ * Envia mensagem para um número
+ */
+export async function enviarMensagem(numero, mensagem, imagemUrl = null) {
+  if (!client) throw new Error("❌ Cliente WhatsApp não inicializado!");
+
+  const numeroFormatado = numero.replace(/\D/g, "");
+  const id = numeroFormatado.includes("@c.us")
+    ? numeroFormatado
+    : `${numeroFormatado}@c.us`;
+
+  if (imagemUrl) {
+    await client.sendImage(id, imagemUrl, "promo.jpg", mensagem);
+    console.log(`📤 Mensagem + imagem enviadas para ${id}`);
+  } else {
+    await client.sendText(id, mensagem);
+    console.log(`📤 Mensagem enviada para ${id}`);
   }
 }
