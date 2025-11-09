@@ -6,18 +6,35 @@ import path from "path";
 let clientInstance = null;
 
 /** -------------------------
- * 🔹 Utilidades de número / JID
+ * 🔹 Utilidades e verificação de sessão
  * ------------------------- */
 
-/** Converte para dígitos puros */
+/** Converte número para apenas dígitos */
 function toDigits(n) {
   return String(n || "").replace(/\D/g, "");
 }
 
-/** Resolve o JID oficial do WhatsApp para um número (sem travar o contexto DOM) */
-/** Resolve o JID oficial do WhatsApp (suporte total a contas Business) */
+/** Aguarda o WhatsApp (WAPI) estar pronto antes de qualquer operação */
+async function waitForWapiReady(maxTries = 15) {
+  for (let i = 0; i < maxTries; i++) {
+    try {
+      const ready = await clientInstance.isConnected();
+      if (ready) {
+        if (i > 0) console.log("✅ WAPI carregado e pronto.");
+        return true;
+      }
+    } catch (_) {}
+    console.log(`⌛ Aguardando WAPI estar pronto... (${i + 1}/${maxTries})`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error("❌ WAPI não ficou pronto a tempo");
+}
+
+/** Resolve o JID oficial do WhatsApp (com suporte a contas Business) */
 async function resolveJid(numberDigits) {
   if (!clientInstance) throw new Error("WPPConnect não iniciado.");
+
+  await waitForWapiReady();
 
   const onlyDigits = toDigits(numberDigits);
   const e164 = onlyDigits.startsWith("55") ? onlyDigits : `55${onlyDigits}`;
@@ -31,7 +48,6 @@ async function resolveJid(numberDigits) {
       (typeof st?.id === "string" ? st.id : null) ||
       (st?.number && `${st.number}@c.us`) ||
       null;
-
     if (jid) {
       console.log(`🔎 JID resolvido via checkNumberStatus: ${jid}`);
       return jid;
@@ -40,39 +56,32 @@ async function resolveJid(numberDigits) {
     console.warn(`⚠️ checkNumberStatus falhou para ${e164}: ${err.message}`);
   }
 
-  // 2️⃣ getNumberId (cobre contas Business e novos números)
+  // 2️⃣ Tentativa de preparar contato (envio invisível)
   try {
-    const res = await clientInstance.getNumberId(e164);
-    jid = res?._serialized || res?.user || null;
-    if (jid) {
-      console.log(`✅ JID resolvido via getNumberId: ${jid}`);
-      return jid.includes("@c.us") ? jid : `${jid}@c.us`;
-    }
-  } catch (err) {
-    console.warn(`⚠️ getNumberId falhou para ${e164}: ${err.message}`);
-  }
-
-  // 3️⃣ tentativa de "acordar" o número (envio silencioso)
-  try {
-    console.log(`⚙️ Tentando criar thread com ${e164}...`);
+    console.log(`⚙️ Tentando preparar contato ${e164}...`);
     const fake = `${e164}@c.us`;
     await clientInstance.sendText(fake, "‎"); // caractere invisível
     await new Promise((r) => setTimeout(r, 2000));
 
-    const confirm = await clientInstance.getNumberId(e164);
-    if (confirm?._serialized) {
-      console.log(`✅ Thread criada e JID confirmado: ${confirm._serialized}`);
-      return confirm._serialized;
+    const retry = await clientInstance.checkNumberStatus(e164);
+    jid =
+      retry?.id?._serialized ||
+      (typeof retry?.id === "string" ? retry.id : null) ||
+      (retry?.number && `${retry.number}@c.us`) ||
+      null;
+
+    if (jid) {
+      console.log(`✅ Contato ${e164} preparado e resolvido: ${jid}`);
+      return jid;
     }
   } catch (err) {
-    console.warn(`⚠️ Falha ao preparar número ${e164}: ${err.message}`);
+    console.warn(`⚠️ Falha ao preparar contato ${e164}: ${err.message}`);
   }
 
-  // 4️⃣ fallback final (não trava)
+  // 3️⃣ Fallback final (não trava)
   console.log(`⚙️ Fallback manual usado para ${e164}`);
   return `${e164}@c.us`;
 }
-
 
 /** -------------------------
  * 🔹 Inicialização do WhatsApp
@@ -83,12 +92,15 @@ export async function iniciarWPP(headless = true) {
   const tokenPath = path.join(process.cwd(), "tokens", "recuperacao-upsell");
   if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 
+  const fixedVersion = "2.2412.54"; // versão estável compatível com wapi.js
+
   clientInstance = await wppconnect.create({
     session: "recuperacao-upsell",
     headless,
     puppeteerOptions: { args: ["--no-sandbox", "--disable-setuid-sandbox"] },
     autoClose: false,
     disableWelcome: true,
+    whatsappVersion: fixedVersion,
 
     /** === QR Code === */
     catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
@@ -123,7 +135,7 @@ export async function iniciarWPP(headless = true) {
 
   console.log("✅ WhatsApp conectado e pronto (Upsell).");
 
-  // 🔹 Responde automaticamente a mensagens recebidas
+  // 🔹 Responde automaticamente mensagens recebidas
   clientInstance.onMessage(async (message) => {
     try {
       if (
@@ -169,14 +181,12 @@ export async function enviarMensagem(numeroBruto, mensagem) {
   }
 
   try {
-    // resolve o JID real antes de enviar
     const jid = await resolveJid(numeroBruto);
     console.log(`📤 Enviando mensagem para ${jid}`);
 
     const imagemUrl =
       "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
 
-    // remove links de imagem redundantes no texto
     mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
 
     await clientInstance.sendImage(jid, imagemUrl, "oferta.png", mensagem);
