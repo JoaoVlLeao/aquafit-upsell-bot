@@ -104,32 +104,55 @@ www.aquafitbrasil.com
 /** === Healthcheck === */
 app.get("/health", (_req, res) => res.json({ ok: true, whatsappReadyAt }));
 
-/** === Webhook da Yampi (gatilho: pedido confirmado) === */
-app.post("/webhook/yampi-upsell", async (req, res) => {
+/** === Webhook Yampi (gatilho: pedido pago/confirmado) === */
+app.post("/webhook/yampi", async (req, res) => {
   try {
     const payload = req.body;
-    console.log("📦 Webhook upsell recebido:", JSON.stringify(payload, null, 2));
+    console.log("📦 Payload recebido do webhook Yampi (UPSELL):", JSON.stringify(payload, null, 2));
 
-    const numero = extrairTelefone(payload);
-    if (!numero) {
-      console.warn("⚠️ Nenhum telefone válido encontrado (upsell).");
-      return res.status(200).send("Ignorado: sem número válido.");
+    // === Pega telefone da cliente ===
+    const phone =
+      payload?.customer?.data?.phone?.full_number ||
+      payload?.resource?.customer?.data?.phone?.full_number ||
+      payload?.spreadsheet?.data?.customer_phone;
+
+    if (!phone) {
+      console.warn("⚠️ Nenhum telefone encontrado no payload de upsell.");
+      return res.status(200).send("Ignorado: sem telefone válido.");
     }
 
-    const mensagem = gerarMensagemUpsell(payload);
-    const imagemUrl =
-      "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
+    // Sanitiza número
+    const numero = phone.replace(/\D/g, "").replace(/^55/, "");
+    const nome = payload?.customer?.data?.first_name || "cliente";
+    const numeroPedido = payload?.resource?.id || "000000";
+    const imagem = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
 
-    await enviarMensagem(numero, mensagem);
-    await enviarMensagem(numero, imagemUrl); // envia imagem em seguida
-    console.log(`📤 Mensagem de upsell enviada para ${numero}`);
+    // === Mensagem personalizada ===
+    const mensagem = `
+Olá *${nome}*, seu pedido de número *${numeroPedido}* foi confirmado! 💚💗
 
+É um prazer ter você como cliente 😍 Nós sabemos que você queria levar mais peças do nosso site!
+
+Por isso temos um *presente especial* para você 🎁
+
+Acrescente *mais itens ao seu pedido* com um *super desconto*, sendo *enviados no mesmo frete* 💚💗
+
+Use o *cupom FLZ30* ao finalizar o seu pedido — *válido até o fim do dia*, em todo o site, *sem limite de itens*! 😍
+
+👉 www.aquafitbrasil.com
+`;
+
+    await enviarMensagem(numero, mensagem.trim());
+    await enviarMensagem(numero, imagem); // envia imagem depois do texto
+
+    console.log(`📤 Mensagem de upsell enviada com sucesso para ${numero}`);
     res.status(200).json({ ok: true, enviado: true });
-  } catch (e) {
-    console.error("❌ Erro no webhook upsell:", e);
-    res.status(500).send("Erro interno no upsell");
+  } catch (err) {
+    console.error("❌ Erro no webhook de upsell:", err);
+    res.status(500).send("Erro interno no webhook de upsell.");
   }
 });
+
 
 /** === Inicialização === */
 app.listen(process.env.PORT || 9090, async () => {
