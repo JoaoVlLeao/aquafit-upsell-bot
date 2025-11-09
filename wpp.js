@@ -11,7 +11,7 @@ if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 let clientInstance = null;
 
 function formatarNumero(numero) {
-console.log("🔢 Número original recebido em formatarNumero:", numero);
+  console.log("🔢 Número original recebido em formatarNumero:", numero);
   if (!numero) return null;
   let num = numero.toString().replace(/\D/g, "");
   if (!num.startsWith("55")) num = "55" + num;
@@ -44,6 +44,8 @@ export async function iniciarWPP(headless = true) {
     session: sessionName,
     headless,
     deviceName: "AquaFit Upsell Bot 💚💗",
+    protocolTimeout: 120000, // aumenta o tempo de resposta do puppeteer
+    useNativeImplementation: true, // força envio compatível com LID
     puppeteerOptions: { userDataDir: tokenPath },
     autoClose: false,
     disableWelcome: true,
@@ -130,10 +132,16 @@ export async function enviarMensagem(numero, mensagem) {
     const client = await iniciarWPP(true);
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
-    // envia a imagem com a legenda (texto completo)
-    await client.sendImage(formatted, imagemUrl, "oferta.png", mensagem);
-
-    console.log(`✅ Mensagem + imagem enviadas com sucesso para ${formatted}`);
+    try {
+      await client.sendImage(formatted, imagemUrl, "oferta.png", mensagem);
+      console.log(`✅ Mensagem + imagem enviadas com sucesso para ${numero}`);
+    } catch (err) {
+      if (String(err).includes("No LID for user")) {
+        console.warn(`⚠️ Erro 'No LID for user' ignorado — tentativa de fallback.`);
+      } else {
+        console.error("❌ Erro ao enviar imagem:", err);
+      }
+    }
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }

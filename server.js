@@ -1,4 +1,4 @@
-// server-upsell.js
+// server.js
 import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
@@ -33,107 +33,31 @@ app.get("/qr", (_req, res) => {
 
 let whatsappReadyAt = 0;
 
-/** === Função: Varre e normaliza telefone === */
-function extrairTelefone(payload) {
-  try {
-    const possiveisCampos = [
-      payload?.customer?.phone?.full_number,
-      payload?.customer?.phone?.number,
-      payload?.customer?.phone,
-      payload?.customer_phone,
-      payload?.spreadsheet?.data?.customer_phone,
-      payload?.tracking_data?.phone,
-      payload?.whatsapp_link?.match(/phone=(\d+)/)?.[1],
-      payload?.resource?.customer?.data?.phone?.full_number,
-      payload?.resource?.customer?.data?.phone,
-      payload?.resource?.customer?.phone,
-      payload?.resource?.tracking_data?.phone,
-    ];
-
-    let numero = possiveisCampos.find((n) => typeof n === "string" && n.match(/\d{8,}/));
-    if (!numero) return null;
-
-    numero = numero.replace(/\D/g, "");
-    const areaCode =
-      payload?.customer?.phone?.area_code ||
-      payload?.resource?.customer?.data?.phone?.area_code ||
-      payload?.resource?.customer?.phone?.area_code ||
-      "";
-
-    if (numero.startsWith("55") && numero.length > 11) numero = numero.slice(2);
-    if (numero.length < 11 && areaCode) numero = areaCode.replace(/\D/g, "") + numero;
-    if (numero.startsWith("0")) numero = numero.slice(1);
-    if (numero.length === 13 && numero.startsWith("55")) numero = numero.slice(2);
-
-    return /^\d{10,11}$/.test(numero) ? numero : null;
-  } catch (e) {
-    console.error("Erro ao extrair telefone:", e);
-    return null;
-  }
-}
-
-/** === Função: Gera mensagem de upsell === */
-function gerarMensagemUpsell(payload) {
-  const nome =
-    payload?.customer?.first_name ||
-    payload?.resource?.customer?.data?.first_name ||
-    payload?.customer?.name?.split(" ")?.[0] ||
-    "cliente";
-  const numeroPedido =
-    payload?.order_id ||
-    payload?.resource?.id ||
-    payload?.resource?.order_id ||
-    "seu pedido";
-
-  return `
-Olá *${nome}*, seu pedido de número *${numeroPedido}* foi confirmado, e é um prazer ter você como cliente! 😄  
-
-Sabemos que você queria levar mais *peças* do nosso site... 💚💗  
-
-Por isso, temos um *presente especial* para você! 🎁  
-
-Acrescente *mais itens ao seu pedido* com um *super desconto*, sendo *enviados no mesmo frete*.  
-
-Use o *cupom FLZ30* ao finalizar o seu pedido — o desconto é válido em todo o site, *sem limite de itens* e *válido para o dia de hoje*.  
-
-Aproveite as promoções AquaFit Brasil e *leve mais por menos*:  
-www.aquafitbrasil.com
-  `.trim();
-}
-
-/** === Healthcheck === */
-app.get("/health", (_req, res) => res.json({ ok: true, whatsappReadyAt }));
-
-/** === Webhook Yampi (gatilho: pedido pago/confirmado) === */
+/** === Webhook Yampi === */
 app.post("/webhook/yampi", async (req, res) => {
   try {
     const payload = req.body;
     console.log("📦 Payload recebido do webhook Yampi (UPSELL):", JSON.stringify(payload, null, 2));
 
-    // === Pega telefone da cliente ===
     const phone =
       payload?.customer?.data?.phone?.full_number ||
       payload?.resource?.customer?.data?.phone?.full_number ||
       payload?.spreadsheet?.data?.customer_phone;
 
     if (!phone) {
-      console.warn("⚠️ Nenhum telefone encontrado no payload de upsell.");
+      console.warn("⚠️ Nenhum telefone encontrado no payload.");
       return res.status(200).send("Ignorado: sem telefone válido.");
     }
 
-    // Sanitiza número
-    // Sanitiza número (sem remover o DDI!)
-const numero = phone.replace(/\D/g, "");
+    // ✅ Corrigido: não remove o DDI
+    const numero = phone.replace(/\D/g, "");
 
-// Logs para depuração
-console.log("📞 Número recebido no webhook (bruto):", phone);
-console.log("🔧 Número sanitizado (mantendo DDI se existir):", numero);
+    console.log("📞 Número recebido no webhook (bruto):", phone);
+    console.log("🔧 Número sanitizado (mantendo DDI se existir):", numero);
 
     const nome = payload?.customer?.data?.first_name || "cliente";
     const numeroPedido = payload?.resource?.id || "000000";
-    const imagem = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
 
-    // === Mensagem personalizada ===
     const mensagem = `
 Olá *${nome}*, seu pedido de número *${numeroPedido}* foi confirmado! 💚💗
 
@@ -146,22 +70,25 @@ Acrescente *mais itens ao seu pedido* com um *super desconto*, sendo *enviados n
 Use o *cupom FLZ30* ao finalizar o seu pedido — *válido até o fim do dia*, em todo o site, *sem limite de itens*! 😍
 
 👉 www.aquafitbrasil.com
-`;
+    `.trim();
 
-    await enviarMensagem(numero, mensagem.trim());
+    // responde ao webhook imediatamente (pra não dar timeout)
+    res.status(200).json({ ok: true, recebido: true });
 
-    console.log(`📤 Mensagem de upsell enviada com sucesso para ${numero}`);
-    res.status(200).json({ ok: true, enviado: true });
+    // envia a mensagem em background
+    await enviarMensagem(numero, mensagem);
   } catch (err) {
     console.error("❌ Erro no webhook de upsell:", err);
     res.status(500).send("Erro interno no webhook de upsell.");
   }
 });
 
+/** === Healthcheck === */
+app.get("/health", (_req, res) => res.json({ ok: true, whatsappReadyAt }));
 
 /** === Inicialização === */
-app.listen(process.env.PORT || 9090, async () => {
-  console.log(`🚀 Upsell Server on :${process.env.PORT || 9090}`);
+app.listen(process.env.PORT || 8080, async () => {
+  console.log(`🚀 Upsell Server on :${process.env.PORT || 8080}`);
   const headless = String(process.env.HEADLESS || "true").toLowerCase() === "true";
   await iniciarWPP(headless);
   whatsappReadyAt = Date.now();
