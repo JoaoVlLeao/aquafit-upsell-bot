@@ -15,34 +15,64 @@ function toDigits(n) {
 }
 
 /** Resolve o JID oficial do WhatsApp para um número (sem travar o contexto DOM) */
+/** Resolve o JID oficial do WhatsApp (suporte total a contas Business) */
 async function resolveJid(numberDigits) {
   if (!clientInstance) throw new Error("WPPConnect não iniciado.");
 
   const onlyDigits = toDigits(numberDigits);
   const e164 = onlyDigits.startsWith("55") ? onlyDigits : `55${onlyDigits}`;
+  let jid = null;
 
-  // ✅ Nova abordagem – apenas checkNumberStatus()
+  // 1️⃣ checkNumberStatus (padrão)
   try {
     const st = await clientInstance.checkNumberStatus(e164);
-
-    const jid =
+    jid =
       st?.id?._serialized ||
       (typeof st?.id === "string" ? st.id : null) ||
       (st?.number && `${st.number}@c.us`) ||
       null;
 
     if (jid) {
-      console.log(`🔎 JID resolvido com sucesso para ${e164}: ${jid}`);
+      console.log(`🔎 JID resolvido via checkNumberStatus: ${jid}`);
       return jid;
     }
   } catch (err) {
-    console.warn(`⚠️ Falha ao resolver JID para ${e164}: ${err.message}`);
+    console.warn(`⚠️ checkNumberStatus falhou para ${e164}: ${err.message}`);
   }
 
-  // ⚙️ Fallback seguro
-  console.log(`⚙️ Usando fallback manual para ${e164}`);
+  // 2️⃣ getNumberId (cobre contas Business e novos números)
+  try {
+    const res = await clientInstance.getNumberId(e164);
+    jid = res?._serialized || res?.user || null;
+    if (jid) {
+      console.log(`✅ JID resolvido via getNumberId: ${jid}`);
+      return jid.includes("@c.us") ? jid : `${jid}@c.us`;
+    }
+  } catch (err) {
+    console.warn(`⚠️ getNumberId falhou para ${e164}: ${err.message}`);
+  }
+
+  // 3️⃣ tentativa de "acordar" o número (envio silencioso)
+  try {
+    console.log(`⚙️ Tentando criar thread com ${e164}...`);
+    const fake = `${e164}@c.us`;
+    await clientInstance.sendText(fake, "‎"); // caractere invisível
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const confirm = await clientInstance.getNumberId(e164);
+    if (confirm?._serialized) {
+      console.log(`✅ Thread criada e JID confirmado: ${confirm._serialized}`);
+      return confirm._serialized;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Falha ao preparar número ${e164}: ${err.message}`);
+  }
+
+  // 4️⃣ fallback final (não trava)
+  console.log(`⚙️ Fallback manual usado para ${e164}`);
   return `${e164}@c.us`;
 }
+
 
 /** -------------------------
  * 🔹 Inicialização do WhatsApp
