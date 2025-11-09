@@ -120,8 +120,16 @@ export async function enviarMensagem(numero, mensagem, imagemUrl) {
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
     if (imagemUrl) {
-      await client.sendImage(formatted, imagemUrl, "promocao.jpg", mensagem);
+      // 🔽 Correção: baixar imagem temporariamente e enviar como arquivo
+      const tempPath = path.join(process.cwd(), "public", "temp-image.jpg");
+      const response = await fetch(imagemUrl);
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(tempPath, Buffer.from(buffer));
+
+      await client.sendImage(formatted, tempPath, "promocao.jpg", mensagem);
       console.log(`✅ Imagem + legenda enviadas para ${formatted}`);
+
+      fs.unlinkSync(tempPath); // limpa o arquivo temporário
     } else {
       await client.sendText(formatted, mensagem);
       console.log(`✅ Mensagem enviada para ${formatted}`);
