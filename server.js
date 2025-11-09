@@ -143,7 +143,6 @@ Use o *cupom FLZ30* ao finalizar o seu pedido — *válido até o fim do dia*, e
 `;
 
     await enviarMensagem(numero, mensagem.trim());
-    await enviarMensagem(numero, imagem); // envia imagem depois do texto
 
     console.log(`📤 Mensagem de upsell enviada com sucesso para ${numero}`);
     res.status(200).json({ ok: true, enviado: true });
