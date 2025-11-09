@@ -4,6 +4,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import axios from "axios";
 import { fileURLToPath } from "url";
 import { iniciarWPP, enviarMensagem } from "./wpp.js";
 
@@ -33,56 +34,61 @@ app.get("/qr", (_req, res) => {
 
 let whatsappReadyAt = 0;
 
-/** === Webhook Yampi (pedido pago/confirmado) === */
+/** === Função: Normaliza telefone === */
+function normalizePhone(raw) {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D/g, "");
+  if (digits.startsWith("55")) return digits;
+  if (digits.length === 11) return "55" + digits;
+  return digits || null;
+}
+
+/** === Webhook da Yampi === */
 app.post("/webhook/yampi", async (req, res) => {
   try {
     const payload = req.body;
     console.log("📦 Payload recebido do webhook Yampi (UPSELL):", JSON.stringify(payload, null, 2));
 
-    const phone =
-      payload?.customer?.data?.phone?.full_number ||
+    const numero =
       payload?.resource?.customer?.data?.phone?.full_number ||
-      payload?.spreadsheet?.data?.customer_phone;
+      payload?.customer?.data?.phone?.full_number ||
+      payload?.resource?.customer?.data?.phone ||
+      payload?.customer_phone;
 
-    if (!phone) {
-      console.warn("⚠️ Nenhum telefone encontrado no payload.");
+    const nome = payload?.resource?.customer?.data?.first_name || "cliente";
+    const numeroPedido = payload?.resource?.id || "000000";
+
+    if (!numero) {
+      console.warn("⚠️ Nenhum número de telefone encontrado.");
       return res.status(200).send("Ignorado: sem telefone válido.");
     }
 
-    const numero = phone.replace(/\D/g, "");
-    const nome = payload?.customer?.data?.first_name || "cliente";
-    const numeroPedido = payload?.resource?.id || "000000";
-
-    console.log("📞 Número recebido no webhook:", phone);
-    console.log("🔧 Número sanitizado:", numero);
+    const numeroLimpo = normalizePhone(numero);
+    console.log(`📞 Número recebido no webhook: ${numero}`);
+    console.log(`🔧 Número sanitizado: ${numeroLimpo}`);
 
     const mensagem = `
-Olá *${nome}*, seu pedido de número *${numeroPedido}* foi confirmado! 💚💗
+Olá *${nome}*, seu pedido *${numeroPedido}* foi confirmado! 💚💗
 
-É um prazer ter você como cliente 😍 Nós sabemos que você queria levar mais peças do nosso site!
+É um prazer ter você como cliente 😍 Sabemos que você queria levar mais *peças* do nosso site.
 
-Por isso temos um *presente especial* para você 🎁
+Por isso temos um *presente especial* pra você 🎁
 
-Acrescente *mais itens ao seu pedido* com um *super desconto*, sendo *enviados no mesmo frete* 💚💗
+Acrescente *mais itens ao seu pedido* com um *super desconto*, sendo *enviados no mesmo frete*! 💚💗
 
 Use o *cupom FLZ30* ao finalizar o seu pedido — *válido até o fim do dia*, em todo o site, *sem limite de itens*! 😍
 
 👉 www.aquafitbrasil.com
-    `.trim();
+`.trim();
 
-    // responde rápido pro webhook não expirar
-    res.status(200).json({ ok: true, recebido: true });
-
-    // envia mensagem de upsell
-    await enviarMensagem(numero, mensagem);
-  } catch (err) {
-    console.error("❌ Erro no webhook de upsell:", err);
+    await enviarMensagem(numeroLimpo, mensagem);
+    console.log(`✅ Mensagem + imagem enviadas com sucesso para ${numeroLimpo}`);
+    res.status(200).json({ ok: true, enviado: true });
+  } catch (e) {
+    console.error("❌ Erro no webhook de upsell:", e);
     res.status(500).send("Erro interno no webhook de upsell.");
   }
 });
-
-/** === Healthcheck === */
-app.get("/health", (_req, res) => res.json({ ok: true, whatsappReadyAt }));
 
 /** === Inicialização === */
 app.listen(process.env.PORT || 8080, async () => {
