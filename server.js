@@ -33,7 +33,7 @@ app.get("/qr", (_req, res) => {
 
 let whatsappReadyAt = 0;
 
-/** === Webhook Yampi === */
+/** === Webhook Yampi (pedido pago/confirmado) === */
 app.post("/webhook/yampi", async (req, res) => {
   try {
     const payload = req.body;
@@ -49,14 +49,12 @@ app.post("/webhook/yampi", async (req, res) => {
       return res.status(200).send("Ignorado: sem telefone válido.");
     }
 
-    // ✅ Corrigido: não remove o DDI
     const numero = phone.replace(/\D/g, "");
-
-    console.log("📞 Número recebido no webhook (bruto):", phone);
-    console.log("🔧 Número sanitizado (mantendo DDI se existir):", numero);
-
     const nome = payload?.customer?.data?.first_name || "cliente";
     const numeroPedido = payload?.resource?.id || "000000";
+
+    console.log("📞 Número recebido no webhook:", phone);
+    console.log("🔧 Número sanitizado:", numero);
 
     const mensagem = `
 Olá *${nome}*, seu pedido de número *${numeroPedido}* foi confirmado! 💚💗
@@ -72,10 +70,10 @@ Use o *cupom FLZ30* ao finalizar o seu pedido — *válido até o fim do dia*, e
 👉 www.aquafitbrasil.com
     `.trim();
 
-    // responde ao webhook imediatamente (pra não dar timeout)
+    // responde rápido pro webhook não expirar
     res.status(200).json({ ok: true, recebido: true });
 
-    // envia a mensagem em background
+    // envia mensagem de upsell
     await enviarMensagem(numero, mensagem);
   } catch (err) {
     console.error("❌ Erro no webhook de upsell:", err);

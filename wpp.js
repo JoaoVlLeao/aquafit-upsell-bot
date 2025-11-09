@@ -1,148 +1,146 @@
 // wpp.js
-import pkg from "@wppconnect-team/wppconnect";
+import wppconnect from "@wppconnect-team/wppconnect";
 import fs from "fs";
 import path from "path";
-const { create } = pkg;
-
-const sessionName = "recuperacao-upsell";
-const tokenPath = path.join(process.cwd(), "tokens", sessionName);
-if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 
 let clientInstance = null;
 
-function formatarNumero(numero) {
-  console.log("🔢 Número original recebido em formatarNumero:", numero);
-  if (!numero) return null;
-  let num = numero.toString().replace(/\D/g, "");
-  if (!num.startsWith("55")) num = "55" + num;
-  if (num.length > 13) num = num.slice(0, 13);
-  return `${num}@c.us`;
+/** -------------------------
+ * 🔹 Utilidades de número / JID
+ * ------------------------- */
+
+/** Converte para dígitos puros */
+function toDigits(n) {
+  return String(n || "").replace(/\D/g, "");
 }
 
+/** Resolve o JID oficial do WhatsApp para um número */
+async function resolveJid(numberDigits) {
+  if (!clientInstance) throw new Error("WPPConnect não iniciado.");
+
+  const onlyDigits = toDigits(numberDigits);
+  const e164 = onlyDigits.startsWith("55") ? onlyDigits : `55${onlyDigits}`;
+
+  // 1️⃣ Tentativa principal – perfil do número
+  try {
+    const prof = await clientInstance.getNumberProfile(e164);
+    const jid =
+      prof?.id?._serialized ||
+      (prof?.id?.user && `${prof.id.user}@c.us`) ||
+      null;
+    if (jid) return jid;
+  } catch (_) {}
+
+  // 2️⃣ Tentativa secundária – status do número
+  try {
+    const st = await clientInstance.checkNumberStatus(e164);
+    const jid =
+      st?.id?._serialized ||
+      (typeof st?.id === "string" ? st.id : null) ||
+      (st?.number && `${st.number}@c.us`) ||
+      null;
+    if (jid) return jid;
+  } catch (_) {}
+
+  // 3️⃣ Fallback – monta manualmente
+  return `${e164}@c.us`;
+}
+
+/** -------------------------
+ * 🔹 Inicialização do WhatsApp
+ * ------------------------- */
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
 
-  const lock = path.join(tokenPath, "SingletonLock");
-  if (fs.existsSync(lock)) {
-    try {
-      fs.rmSync(lock);
-      console.warn("⚠️ Removida trava antiga de sessão (SingletonLock).");
-    } catch (e) {
-      console.error("Erro ao remover trava:", e);
-    }
-  }
+  const tokenPath = path.join(process.cwd(), "tokens", "recuperacao-upsell");
+  if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 
-  const dir = path.join(process.cwd(), "public");
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  if (clientInstance) {
-    console.log("♻️ Sessão já ativa. Reutilizando instância existente.");
-    return clientInstance;
-  }
-
-  clientInstance = await create({
-    session: sessionName,
+  clientInstance = await wppconnect.create({
+    session: "recuperacao-upsell",
     headless,
-    deviceName: "AquaFit Upsell Bot 💚💗",
-    protocolTimeout: 120000, // aumenta o tempo de resposta do puppeteer
-    useNativeImplementation: true, // força envio compatível com LID
-    puppeteerOptions: { userDataDir: tokenPath },
+    puppeteerOptions: { args: ["--no-sandbox", "--disable-setuid-sandbox"] },
     autoClose: false,
-    disableWelcome: true,
-    restartOnCrash: true,
-    catchQRTimeout: 0,
-    updatesLog: false,
-    browserArgs: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-extensions",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-      "--no-zygote",
-      "--single-process",
-      "--disable-infobars",
-      "--window-size=1920,1080",
-    ],
+    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+      const dir = path.join(process.cwd(), "public");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    catchQR: async (base64Qr, asciiQR, attempts, urlCode) => {
       const qrImagePath = path.join(dir, "qrcode.png");
-      const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
+      const imageBuffer = Buffer.from(
+        base64Qr.replace("data:image/png;base64,", ""),
+        "base64"
+      );
       fs.writeFileSync(qrImagePath, imageBuffer);
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
       console.log("\n✅ QR Code atualizado!");
-      console.log("🔗 Escaneie o QR direto no navegador:");
-      console.log(qrUrl);
-      console.log("📲 Ou acesse /qr no navegador para visualizar a imagem.\n");
+      console.log(
+        "📲 Acesse /qr no navegador para escanear e conectar o WhatsApp.\n"
+      );
     },
+  });
 
-    statusFind: (statusSession) => {
-      console.log("📱 Status da sessão:", statusSession);
-    },
-  })
-    .then((client) => {
-      console.log("✅ WhatsApp conectado e pronto (Upsell).");
+  console.log("✅ WhatsApp conectado e pronto (Upsell).");
 
-      client.onMessage(async (msg) => {
-        try {
-          if (!msg.body || msg.body === "undefined") return;
-          console.log(`💬 Cliente respondeu (${msg.from}): "${msg.body}"`);
+  // 🔹 Responde automaticamente a mensagens recebidas
+  clientInstance.onMessage(async (message) => {
+    try {
+      if (
+        message.fromMe ||
+        message.isNotification ||
+        message.type !== "chat" ||
+        !message.body ||
+        String(message.body).trim().toLowerCase() === "undefined"
+      ) {
+        return;
+      }
 
-          await client.sendText(
-            msg.from,
-            "Oi 💚💗! Aqui é a equipe *AquaFit Brasil*. Essa é uma conta automática, mas queremos te ajudar! 💬\n\n" +
-              "Por favor, entre em contato com nosso *atendimento humano* através do número *19 98773-6747* 💬\n\n" +
-              "Lá nossa equipe poderá te atender com mais rapidez 💚"
-          );
+      console.log(`💬 Cliente respondeu (${message.from}): "${message.body}"`);
 
-          console.log(`📩 Mensagem automática enviada para ${msg.from}`);
-        } catch (e) {
-          console.error("❌ Erro ao responder cliente automaticamente:", e);
-        }
-      });
+      await clientInstance.sendText(
+        message.from,
+        "Oi 💚💗! Aqui é a equipe *AquaFit Brasil*. Essa é uma conta automática, mas queremos te ajudar! 💬\n\n" +
+          "Por favor, entre em contato com nosso *atendimento humano* através do número *19 98773-6747* 💬\n\n" +
+          "Lá nossa equipe poderá te atender com mais rapidez 💚"
+      );
 
-      return client;
-    })
-    .catch((err) => {
-      console.error("❌ Erro ao iniciar WhatsApp:", err);
-      clientInstance = null;
-    });
+      console.log(`📩 Mensagem automática enviada para ${message.from}`);
+    } catch (err) {
+      console.error("❌ Erro ao responder automaticamente:", err.message);
+    }
+  });
 
   return clientInstance;
 }
 
-export async function enviarMensagem(numero, mensagem) {
+/** -------------------------
+ * 🔹 Envio de mensagem com imagem e legenda
+ * ------------------------- */
+export async function enviarMensagem(numeroBruto, mensagem) {
+  if (!numeroBruto || !mensagem) {
+    console.warn("⚠️ Número ou mensagem ausente ao enviar.");
+    return;
+  }
+
+  if (!clientInstance) {
+    console.warn("⚠️ Cliente WhatsApp ainda não iniciado, iniciando agora...");
+    await iniciarWPP(true);
+  }
+
   try {
-    if (!numero || !mensagem) {
-      console.warn("⚠️ Número ou mensagem ausente ao enviar.");
-      return;
-    }
+    const jid = await resolveJid(numeroBruto);
+    console.log(`📤 Enviando mensagem para ${jid}`);
 
-    const formatted = formatarNumero(numero);
-    if (!formatted) throw new Error(`Número inválido: ${numero}`);
+    const imagemUrl =
+      "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
 
-    console.log(`📤 Enviando mensagem para ${formatted}`);
-
-    // imagem oficial do upsell
-    const imagemUrl = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
-
-    // remove links de imagem que possam estar no texto
+    // Remove URLs de imagem redundantes no texto
     mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
 
-    const client = await iniciarWPP(true);
-    if (!client) throw new Error("Cliente WhatsApp não disponível.");
+    await clientInstance.sendImage(jid, imagemUrl, "oferta.png", mensagem);
+    console.log(`✅ Mensagem + imagem enviadas com sucesso para ${jid}`);
 
     try {
-      await client.sendImage(formatted, imagemUrl, "oferta.png", mensagem);
-      console.log(`✅ Mensagem + imagem enviadas com sucesso para ${numero}`);
-    } catch (err) {
-      if (String(err).includes("No LID for user")) {
-        console.warn(`⚠️ Erro 'No LID for user' ignorado — tentativa de fallback.`);
-      } else {
-        console.error("❌ Erro ao enviar imagem:", err);
-      }
-    }
-  } catch (e) {
-    console.error("❌ Erro ao enviar mensagem:", e);
+      await clientInstance.sendSeen(jid);
+    } catch (_) {}
+  } catch (err) {
+    console.error("❌ Erro ao enviar mensagem:", err.message);
   }
 }
