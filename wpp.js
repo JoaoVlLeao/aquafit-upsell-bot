@@ -18,20 +18,20 @@ export async function iniciarWPP(headless = true) {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--no-first-run",
-      "--no-zygote",
       "--disable-gpu",
     ],
-    catchQR: async (base64Qr) => {
+    catchQR: async (base64Qr, asciiQR, attempts, urlCode) => {
       const qrImagePath = path.join(dir, "qrcode.png");
       const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
       fs.writeFileSync(qrImagePath, imageBuffer);
 
-      // Gera link visual no console
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(base64Qr)}`;
-      console.log(`✅ QR Code gerado! Escaneie aqui:\n${qrUrl}`);
-      console.log("📲 Ou acesse /qr no navegador para escanear.");
+      // ✅ Agora sim — link curto e funcional
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
+
+      console.log("\n✅ QR Code atualizado!");
+      console.log("🔗 Escaneie o QR direto no navegador:");
+      console.log(qrUrl);
+      console.log("📲 Ou acesse /qr no navegador para visualizar a imagem.\n");
     },
     statusFind: (statusSession) => {
       console.log("📱 Status da sessão:", statusSession);
