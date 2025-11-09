@@ -11,6 +11,17 @@ if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
 
+  // 🔒 Remove travas de sessão antigas (evita "browser already running")
+  const sessionLock = path.join(tokenPath, "SingletonLock");
+  if (fs.existsSync(sessionLock)) {
+    console.warn("⚠️ Removendo trava de sessão antiga (SingletonLock)");
+    try {
+      fs.rmSync(sessionLock);
+    } catch (err) {
+      console.error("Erro ao remover trava antiga:", err);
+    }
+  }
+
   const dir = path.join(process.cwd(), "public");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -57,25 +68,24 @@ export async function iniciarWPP(headless = true) {
     .then((client) => {
       console.log("✅ WhatsApp conectado e pronto (Upsell).");
 
-client.onMessage(async (msg) => {
-  try {
-    if (!msg.body || msg.body === "undefined") return;
-    console.log(`💬 Cliente respondeu (${msg.from}): "${msg.body}"`);
+      client.onMessage(async (msg) => {
+        try {
+          if (!msg.body || msg.body === "undefined") return;
+          console.log(`💬 Cliente respondeu (${msg.from}): "${msg.body}"`);
 
-    // Responde diretamente ao cliente, sem encaminhar nada
-    await client.sendText(
-      msg.from,
-      "Oi 💚💗! Aqui é a equipe *AquaFit Brasil*. Essa é uma conta automática, mas queremos te ajudar! 💬\n\n" +
-      "Por favor, entre em contato com nosso *atendimento humano* através do número *19 98773-6747* 💬\n\n" +
-      "Lá nossa equipe poderá te atender com mais rapidez 💚"
-    );
+          // Responde diretamente ao cliente, sem encaminhar nada
+          await client.sendText(
+            msg.from,
+            "Oi 💚💗! Aqui é a equipe *AquaFit Brasil*. Essa é uma conta automática, mas queremos te ajudar! 💬\n\n" +
+              "Por favor, entre em contato com nosso *atendimento humano* através do número *19 98773-6747* 💬\n\n" +
+              "Lá nossa equipe poderá te atender com mais rapidez 💚"
+          );
 
-    console.log(`📩 Mensagem automática enviada para ${msg.from}`);
-  } catch (e) {
-    console.error("❌ Erro ao responder cliente automaticamente:", e);
-  }
-});
-
+          console.log(`📩 Mensagem automática enviada para ${msg.from}`);
+        } catch (e) {
+          console.error("❌ Erro ao responder cliente automaticamente:", e);
+        }
+      });
 
       return client;
     })
