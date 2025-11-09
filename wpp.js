@@ -1,3 +1,4 @@
+// wpp.js
 import pkg from "@wppconnect-team/wppconnect";
 import fs from "fs";
 import path from "path";
@@ -14,23 +15,22 @@ let clientInstance = null;
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
 
-  // 🔒 Remove travas antigas
+  // Remove trava antiga
   const sessionLock = path.join(tokenPath, "SingletonLock");
   if (fs.existsSync(sessionLock)) {
-    console.warn("⚠️ Removendo trava de sessão antiga (SingletonLock)");
     try {
       fs.rmSync(sessionLock);
+      console.log("⚠️ Trava antiga removida com sucesso.");
     } catch (err) {
-      console.error("Erro ao remover trava antiga:", err);
+      console.error("Erro ao remover trava:", err);
     }
   }
 
   const dir = path.join(process.cwd(), "public");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  // Se já houver uma sessão ativa, reaproveita
   if (clientInstance) {
-    console.log("✅ Sessão WhatsApp já ativa. Reutilizando instância existente.");
+    console.log("♻️ Reutilizando sessão WhatsApp existente.");
     return clientInstance;
   }
 
@@ -62,11 +62,7 @@ export async function iniciarWPP(headless = true) {
       const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
       fs.writeFileSync(qrImagePath, imageBuffer);
 
-      // ✅ Gera link curto compatível com navegador
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-        urlCode
-      )}`;
-
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
       console.log("\n✅ QR Code atualizado!");
       console.log("🔗 Escaneie o QR direto no navegador:");
       console.log(qrUrl);
@@ -102,31 +98,30 @@ export async function iniciarWPP(headless = true) {
     })
     .catch((err) => {
       console.error("❌ Erro ao iniciar WhatsApp:", err);
-      clientInstance = null; // se der erro, limpa instância
+      clientInstance = null;
     });
 
   return clientInstance;
 }
 
-export async function enviarMensagem(numero, mensagem) {
+export async function enviarMensagem(numero, mensagem, imagemUrl = null) {
   try {
     if (!numero || !mensagem) return console.warn("⚠️ Número ou mensagem ausente ao enviar.");
 
     const formatted = numero.startsWith("55") ? `${numero}@c.us` : `55${numero}@c.us`;
     console.log(`📤 Enviando mensagem para ${formatted}`);
 
-    // ✅ Reutiliza a instância já iniciada (sem recriar browser)
     const client = await iniciarWPP(true);
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
-    // 🧹 Remove links de imagem (se o texto contiver o link da imagem)
-    mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
-
-    // 🖼️ Envia imagem com legenda (mensagem do upsell junta)
-    const imageUrl = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
-    await client.sendImage(formatted, imageUrl, "upsell.png", mensagem);
-
-    console.log(`📤 [ÚNICA MENSAGEM] Imagem + legenda enviadas com sucesso para ${formatted}`);
+    if (imagemUrl) {
+      // ✅ Envia a imagem com a legenda
+      await client.sendImage(formatted, imagemUrl, "promo.jpg", mensagem);
+      console.log(`🖼️ Imagem + legenda enviadas para ${formatted}`);
+    } else {
+      await client.sendText(formatted, mensagem);
+      console.log(`📩 Mensagem enviada com sucesso para ${formatted}`);
+    }
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }
