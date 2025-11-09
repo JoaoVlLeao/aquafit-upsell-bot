@@ -14,35 +14,33 @@ function toDigits(n) {
   return String(n || "").replace(/\D/g, "");
 }
 
-/** Resolve o JID oficial do WhatsApp para um número */
+/** Resolve o JID oficial do WhatsApp para um número (sem travar o contexto DOM) */
 async function resolveJid(numberDigits) {
   if (!clientInstance) throw new Error("WPPConnect não iniciado.");
 
   const onlyDigits = toDigits(numberDigits);
   const e164 = onlyDigits.startsWith("55") ? onlyDigits : `55${onlyDigits}`;
 
-  // 1️⃣ Tentativa principal – perfil do número
-  try {
-    const prof = await clientInstance.getNumberProfile(e164);
-    const jid =
-      prof?.id?._serialized ||
-      (prof?.id?.user && `${prof.id.user}@c.us`) ||
-      null;
-    if (jid) return jid;
-  } catch (_) {}
-
-  // 2️⃣ Tentativa secundária – status do número
+  // ✅ Nova abordagem – apenas checkNumberStatus()
   try {
     const st = await clientInstance.checkNumberStatus(e164);
+
     const jid =
       st?.id?._serialized ||
       (typeof st?.id === "string" ? st.id : null) ||
       (st?.number && `${st.number}@c.us`) ||
       null;
-    if (jid) return jid;
-  } catch (_) {}
 
-  // 3️⃣ Fallback – monta manualmente
+    if (jid) {
+      console.log(`🔎 JID resolvido com sucesso para ${e164}: ${jid}`);
+      return jid;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Falha ao resolver JID para ${e164}: ${err.message}`);
+  }
+
+  // ⚙️ Fallback seguro
+  console.log(`⚙️ Usando fallback manual para ${e164}`);
   return `${e164}@c.us`;
 }
 
@@ -82,9 +80,7 @@ export async function iniciarWPP(headless = true) {
         console.log("\n✅ QR Code atualizado!");
         console.log("🔗 Escaneie o QR direto no navegador:");
         console.log(qrUrl);
-        console.log(
-          "📲 Ou acesse /qr no navegador para visualizar a imagem.\n"
-        );
+        console.log("📲 Ou acesse /qr no navegador para visualizar a imagem.\n");
       } catch (err) {
         console.error("❌ Erro ao gerar link do QR:", err.message);
       }
