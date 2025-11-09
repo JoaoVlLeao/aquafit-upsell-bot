@@ -119,11 +119,14 @@ export async function enviarMensagem(numero, mensagem) {
     const client = await iniciarWPP(true);
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
+    // 🧹 Remove links de imagem (se o texto contiver o link da imagem)
+    mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
+
     // 🖼️ Envia imagem com legenda (mensagem do upsell junta)
     const imageUrl = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
     await client.sendImage(formatted, imageUrl, "upsell.png", mensagem);
 
-    console.log(`📤 Imagem + mensagem de upsell enviadas com sucesso para ${formatted}`);
+    console.log(`📤 [ÚNICA MENSAGEM] Imagem + legenda enviadas com sucesso para ${formatted}`);
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }
