@@ -4,6 +4,9 @@ import path from "path";
 const { create } = pkg;
 
 const sessionName = "recuperacao-upsell";
+const tokenPath = path.join(process.cwd(), "tokens", sessionName);
+
+if (!fs.existsSync(tokenPath)) fs.mkdirSync(tokenPath, { recursive: true });
 
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
@@ -14,18 +17,31 @@ export async function iniciarWPP(headless = true) {
   return create({
     session: sessionName,
     headless,
+    deviceName: "AquaFit Upsell Bot 💚💗",
+    puppeteerOptions: { userDataDir: tokenPath },
+    autoClose: false,
+    disableWelcome: true,
+    restartOnCrash: true,
+    catchQRTimeout: 0,
+    updatesLog: false,
     browserArgs: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
+      "--disable-extensions",
       "--disable-gpu",
+      "--disable-software-rasterizer",
+      "--no-zygote",
+      "--single-process",
+      "--disable-infobars",
+      "--window-size=1920,1080",
     ],
+
     catchQR: async (base64Qr, asciiQR, attempts, urlCode) => {
       const qrImagePath = path.join(dir, "qrcode.png");
       const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
       fs.writeFileSync(qrImagePath, imageBuffer);
 
-      // ✅ Agora sim — link curto e funcional
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
 
       console.log("\n✅ QR Code atualizado!");
@@ -33,6 +49,7 @@ export async function iniciarWPP(headless = true) {
       console.log(qrUrl);
       console.log("📲 Ou acesse /qr no navegador para visualizar a imagem.\n");
     },
+
     statusFind: (statusSession) => {
       console.log("📱 Status da sessão:", statusSession);
     },
