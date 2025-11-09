@@ -2,6 +2,7 @@
 import wppconnect from "@wppconnect-team/wppconnect";
 import fs from "fs";
 import path from "path";
+import axios from "axios"; // 👈 ESSA LINHA É ESSENCIAL
 
 let clientInstance = null;
 
