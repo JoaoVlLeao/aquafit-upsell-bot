@@ -16,14 +16,12 @@ export async function iniciarWPP(headless = true) {
     useChrome: true,
     autoClose: false,
     restartOnCrash: true,
-    catchQR: (base64Qr) => {
-      import("fs").then(fs => {
-        import("path").then(path => {
-          const filePath = path.resolve("public/qrcode.png");
-          fs.writeFileSync(filePath, Buffer.from(base64Qr.split(",")[1], "base64"));
-          console.log("📸 QR Code atualizado!");
-        });
-      });
+    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+      // Gera o link do QR diretamente no console (acessível de qualquer lugar)
+      const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
+      console.log("📱 Escaneie este QR Code para conectar ao WhatsApp:");
+      console.log(qrLink);
+      console.log("\nOu copie e cole no navegador acima 👆 para abrir o QR.");
     },
     puppeteerOptions: {
       headless,
@@ -36,7 +34,7 @@ export async function iniciarWPP(headless = true) {
         "--no-zygote",
         "--disable-gpu",
         "--disable-software-rasterizer",
-        "--single-process"
+        "--single-process",
       ],
     },
   });
