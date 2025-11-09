@@ -1,88 +1,90 @@
 // wpp.js
 import pkg from "@wppconnect-team/wppconnect";
-const { create } = pkg;
 import fs from "fs";
 import path from "path";
+const { create } = pkg;
 
-let client = null;
+const sessionName = "recuperacao-upsell";
 
 /**
- * Inicializa o WhatsApp e registra todos os eventos importantes
+ * Inicia sessão do WhatsApp
  */
 export async function iniciarWPP(headless = true) {
   console.log("🚀 Iniciando sessão WhatsApp (Upsell)...");
 
-  const sessionPath = path.resolve("./tokens/recuperacao-upsell");
+  const dir = path.join(process.cwd(), "public");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  client = await create({
-    session: "recuperacao-upsell",
-    catchQR: (base64Qr, asciiQR) => {
-      console.log("📱 Escaneie o QR abaixo para conectar:\n");
-      console.log(asciiQR);
-      const qrPath = path.join("public", "qrcode.png");
-      fs.writeFileSync(qrPath, Buffer.from(base64Qr.replace(/^data:image\/png;base64,/, ""), "base64"));
-      console.log(`✅ QR Code atualizado em: ${qrPath}`);
+  return create({
+    session: sessionName,
+    headless,
+    browserArgs: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      "--disable-software-rasterizer",
+    ],
+    catchQR: async (base64Qr) => {
+      const qrImagePath = path.join(dir, "qrcode.png");
+      const imageBuffer = Buffer.from(base64Qr.replace("data:image/png;base64,", ""), "base64");
+      fs.writeFileSync(qrImagePath, imageBuffer);
+      console.log("✅ QR Code atualizado (acesse /qr para escanear)");
     },
-    puppeteerOptions: {
-      headless,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    statusFind: (statusSession) => {
+      console.log("📱 Status da sessão:", statusSession);
     },
-    folderNameToken: "./tokens",
-    createPathFileToken: true,
-    disableWelcome: true,
-    logQR: false,
-    autoClose: 0,
-    updatesLog: false,
-  });
+    onLoadingScreen: (percent, message) => {
+      console.log("⌛", percent, message);
+    },
+  })
+    .then((client) => {
+      console.log("✅ WhatsApp conectado e pronto (Upsell).");
 
-  console.log("✅ WhatsApp conectado e pronto (Upsell).");
+      // Listener para mensagens recebidas
+      client.onMessage(async (msg) => {
+        try {
+          if (!msg.body || msg.body === "undefined") return;
 
-  // === Listener: mensagens recebidas ===
-  client.onMessage(async (msg) => {
-    try {
-      const from = msg.from || "";
-      const body = msg.body?.trim();
+          console.log(`💬 Cliente respondeu (${msg.from}): "${msg.body}"`);
 
-      // Ignora mensagens vazias ou "undefined"
-      if (!body || body.toLowerCase().includes("undefined")) return;
+          // Encaminhar para o número principal
+          const numeroAdmin = "5519987736747@c.us";
+          await client.sendText(numeroAdmin, `📩 Resposta de ${msg.from}: ${msg.body}`);
 
-      console.log(`💬 Cliente respondeu (${from}): "${body}"`);
+          // Resposta automática
+          await client.sendText(
+            msg.from,
+            "Oi 💚💗! Aqui é a equipe AquaFit Brasil. Essa é uma conta automática, mas já encaminhamos sua mensagem para nosso time de atendimento. 💬"
+          );
 
-      // === Envia notificação ao número principal ===
-      const numeroSuporte = "5519987736747"; // << SEU NÚMERO DE SUPORTE AQUI
+          console.log(`📩 Resposta de ${msg.from} encaminhada para ${numeroAdmin}`);
+        } catch (e) {
+          console.error("❌ Erro ao processar mensagem recebida:", e);
+        }
+      });
 
-      const resposta = `📩 Resposta de *${from}*:\n"${body}"`;
-
-      await client.sendText(numeroSuporte + "@c.us", resposta);
-      console.log(`📤 Mensagem encaminhada para suporte (${numeroSuporte})`);
-
-      // === Resposta automática ao cliente ===
-      const mensagemAuto = `Oi 💚💗, aqui é a Carolina da *AquaFit Brasil*! Vi sua mensagem e nosso time vai te responder por aqui rapidinho 😊\n\nSe quiser um contato direto, você também pode chamar no nosso WhatsApp principal: https://wa.me/${numeroSuporte}`;
-      await client.sendText(from, mensagemAuto);
-
-      console.log(`📤 Mensagem automática enviada para ${from}`);
-    } catch (err) {
-      console.error("❌ Erro ao processar mensagem recebida:", err);
-    }
-  });
-
-  return client;
+      return client;
+    })
+    .catch((err) => console.error("❌ Erro ao iniciar WhatsApp:", err));
 }
 
 /**
- * Envia uma mensagem normal
+ * Envia uma mensagem para um número específico
  */
 export async function enviarMensagem(numero, mensagem) {
-  if (!client) {
-    throw new Error("❌ Cliente WhatsApp não inicializado.");
-  }
-
-  // Garantir formato correto (com @c.us)
-  const destinatario = numero.startsWith("55") ? numero + "@c.us" : "55" + numero + "@c.us";
-
   try {
-    await client.sendText(destinatario, mensagem);
-    console.log(`📤 Mensagem enviada para ${destinatario}`);
+    if (!numero || !mensagem) {
+      console.warn("⚠️ Número ou mensagem ausente ao enviar.");
+      return;
+    }
+
+    const formatted = numero.startsWith("55") ? `${numero}@c.us` : `55${numero}@c.us`;
+
+    console.log(`📤 Enviando mensagem para ${formatted}`);
+    const client = await iniciarWPP(true);
+    await client.sendText(formatted, mensagem);
+    console.log(`📤 Mensagem enviada com sucesso para ${formatted}`);
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }
