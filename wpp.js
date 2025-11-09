@@ -108,31 +108,31 @@ export async function iniciarWPP(headless = true) {
   return clientInstance;
 }
 
-export async function enviarMensagem(numero, mensagem, imagemUrl) {
+export async function enviarMensagem(numero, mensagem) {
   try {
     if (!numero || !mensagem) {
       console.warn("⚠️ Número ou mensagem ausente ao enviar.");
       return;
     }
+
     const formatted = formatarNumero(numero);
     if (!formatted) throw new Error(`Número inválido: ${numero}`);
 
     console.log(`📤 Enviando mensagem para ${formatted}`);
 
-    // remove qualquer link de imagem que esteja no texto
+    // imagem oficial do upsell
+    const imagemUrl = "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
+
+    // remove links de imagem que possam estar no texto
     mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
 
     const client = await iniciarWPP(true);
     if (!client) throw new Error("Cliente WhatsApp não disponível.");
 
-    if (imagemUrl) {
-      await client.sendImage(formatted, imagemUrl, "promo.jpg", mensagem);
-      console.log(`✅ Imagem + legenda enviadas para ${formatted}`);
-    } else {
-      await client.sendText(formatted, mensagem);
-      console.log(`✅ Mensagem enviada para ${formatted}`);
-    }
+    // envia a imagem com a legenda (texto completo)
+    await client.sendImage(formatted, imagemUrl, "oferta.png", mensagem);
 
+    console.log(`✅ Mensagem + imagem enviadas com sucesso para ${formatted}`);
   } catch (e) {
     console.error("❌ Erro ao enviar mensagem:", e);
   }
