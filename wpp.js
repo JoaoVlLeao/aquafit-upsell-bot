@@ -3,12 +3,11 @@ import wppconnect from "@wppconnect-team/wppconnect";
 import qrcode from "qrcode-terminal";
 import fs from "fs";
 import path from "path";
-import { toDigits, ensureDir, ensureLocalImage, delay } from "./utils.js";
+import { ensureDir, ensureLocalImage, toDigits, delay } from "./utils.js";
 import { CONFIG } from "./config.js";
 
 let clientInstance = null;
 
-/** Resolve JID igual ao projeto que funciona */
 async function resolveJid(numberDigits) {
   if (!clientInstance) throw new Error("WPPConnect não iniciado.");
   const onlyDigits = toDigits(numberDigits);
@@ -42,7 +41,16 @@ export async function iniciarWPP(headless = CONFIG.HEADLESS) {
   clientInstance = await wppconnect.create({
     session: CONFIG.SESSION_NAME,
     headless,
-    puppeteerOptions: { args: ["--no-sandbox"] },
+    puppeteerOptions: {
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--single-process",
+        "--no-zygote",
+      ],
+    },
     autoClose: false,
     disableWelcome: true,
     catchQR: (_base64, _ascii, _attempts, urlCode) => {
@@ -51,7 +59,6 @@ export async function iniciarWPP(headless = CONFIG.HEADLESS) {
         qrcode.generate(urlCode, { small: true });
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlCode)}`;
         console.log(`👉 ${qrUrl}`);
-        // Salvar imagem local p/ /qr
         const dir = path.join(process.cwd(), "public");
         ensureDir(dir);
         fs.writeFileSync(path.join(dir, "qrcode.txt"), qrUrl);
@@ -90,25 +97,23 @@ export async function iniciarWPP(headless = CONFIG.HEADLESS) {
   return clientInstance;
 }
 
-/** Envio robusto (com imagem local) + retry */
-export async function enviarMensagem(numeroBruto, mensagem, opts = {}) {
-  if (!numeroBruto || !mensagem) {
+export async function enviarMensagem(numeroE164, mensagem, opts = {}) {
+  if (!numeroE164 || !mensagem) {
     console.warn("⚠️ Número ou mensagem ausente ao enviar.");
     return;
   }
   if (!clientInstance) throw new Error("Cliente WPPConnect não iniciado.");
 
-  const { imageUrl = CONFIG.IMAGE_URL, localImageName = CONFIG.LOCAL_IMAGE_NAME } = opts;
+  const imageUrl = opts.imageUrl || CONFIG.IMAGE_URL;
+  const localImageName = opts.localImageName || CONFIG.LOCAL_IMAGE_NAME;
 
   try {
-    const jid = await resolveJid(numeroBruto);
+    const jid = await resolveJid(numeroE164);
     console.log(`📤 Enviando mensagem para ${jid}`);
 
-    // garantir imagem local
     const publicDir = path.join(process.cwd(), "public");
     const imagePath = await ensureLocalImage(imageUrl, publicDir, localImageName);
 
-    // limpar links de imagem redundantes no texto
     const cleanMsg = String(mensagem).replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
 
     const trySend = async () => {
