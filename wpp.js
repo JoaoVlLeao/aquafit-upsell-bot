@@ -60,20 +60,38 @@ export async function iniciarWPP(headless = true) {
     headless,
     puppeteerOptions: { args: ["--no-sandbox", "--disable-setuid-sandbox"] },
     autoClose: false,
-    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
-      const dir = path.join(process.cwd(), "public");
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    disableWelcome: true,
 
-      const qrImagePath = path.join(dir, "qrcode.png");
-      const imageBuffer = Buffer.from(
-        base64Qr.replace("data:image/png;base64,", ""),
-        "base64"
-      );
-      fs.writeFileSync(qrImagePath, imageBuffer);
-      console.log("\n✅ QR Code atualizado!");
-      console.log(
-        "📲 Acesse /qr no navegador para escanear e conectar o WhatsApp.\n"
-      );
+    /** === QR Code === */
+    catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+      try {
+        const dir = path.join(process.cwd(), "public");
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        const qrImagePath = path.join(dir, "qrcode.png");
+        const imageBuffer = Buffer.from(
+          base64Qr.replace("data:image/png;base64,", ""),
+          "base64"
+        );
+        fs.writeFileSync(qrImagePath, imageBuffer);
+
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+          urlCode
+        )}`;
+
+        console.log("\n✅ QR Code atualizado!");
+        console.log("🔗 Escaneie o QR direto no navegador:");
+        console.log(qrUrl);
+        console.log(
+          "📲 Ou acesse /qr no navegador para visualizar a imagem.\n"
+        );
+      } catch (err) {
+        console.error("❌ Erro ao gerar link do QR:", err.message);
+      }
+    },
+
+    statusFind: (statusSession) => {
+      console.log("📱 Status da sessão:", statusSession);
     },
   });
 
@@ -125,13 +143,14 @@ export async function enviarMensagem(numeroBruto, mensagem) {
   }
 
   try {
+    // resolve o JID real antes de enviar
     const jid = await resolveJid(numeroBruto);
     console.log(`📤 Enviando mensagem para ${jid}`);
 
     const imagemUrl =
       "https://udged.s3.sa-east-1.amazonaws.com/72117/ea89b4b8-12d7-4b80-8ded-0a43018915d4.png";
 
-    // Remove URLs de imagem redundantes no texto
+    // remove links de imagem redundantes no texto
     mensagem = mensagem.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif)/gi, "").trim();
 
     await clientInstance.sendImage(jid, imagemUrl, "oferta.png", mensagem);
